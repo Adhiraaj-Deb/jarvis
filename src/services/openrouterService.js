@@ -8,7 +8,7 @@ const LLAMA_KEY = import.meta.env.VITE_OPENROUTER_KEY_LLAMA
 const QWEN_KEY  = import.meta.env.VITE_OPENROUTER_KEY_QWEN
 const FALLBACK_KEY = import.meta.env.VITE_OPENROUTER_KEY_GEMMA
 const LLAMA_MODEL = import.meta.env.VITE_LLAMA_MODEL_ID || 'meta-llama/llama-3.3-70b-instruct:free'
-const FAST_MODEL  = import.meta.env.VITE_QWEN_MODEL_ID  || 'zhipu/glm-4.5-air:free'
+const FAST_MODEL  = import.meta.env.VITE_QWEN_MODEL_ID  || 'z-ai/glm-4.5-air:free'
 const FALLBACK_MODEL = import.meta.env.VITE_GEMMA_MODEL_ID || 'google/gemma-3-12b-it:free'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
@@ -82,8 +82,11 @@ export async function callAI(transcript, complexity = 'complex', conversationHis
   // Append a hard JSON reminder to every user message — works on all models
   const userMessage = `${transcript}\n\n[Respond with ONLY a valid JSON object matching the schema. No markdown, no extra text.]`
 
+  // Free models (Gemma, GLM) strictly reject role: 'system'.
+  // We bypass this by formatting the system prompt as the first user message.
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: `[System Profile / Instructions]\n${SYSTEM_PROMPT}` },
+    { role: 'assistant', content: '{"intent":"general_reply","action":{"type":"none"},"reply":"Understood."}' },
     ...conversationHistory.slice(-6),
     { role: 'user', content: userMessage },
   ]
