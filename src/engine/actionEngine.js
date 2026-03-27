@@ -3,13 +3,20 @@
  * Executes intents returned by the AI model.
  *
  * Intents handled:
- *   open_app       → opens a web URL for the app
- *   play_music     → opens Spotify or YouTube with the song/artist query
- *   search_web     → Google search
- *   set_reminder   → schedules a timed reminder via setTimeout + TTS
- *   define_word    → no action needed (TTS handles the spoken answer)
- *   general_reply  → no action needed
+ *   open_app          → opens a web URL for the app
+ *   play_music        → plays song via Spotify API (or opens YouTube)
+ *   spotify_pause     → pauses Spotify
+ *   spotify_skip      → skips to next track
+ *   spotify_previous  → goes to previous track
+ *   spotify_current   → asks what's playing
+ *   spotify_volume    → sets volume
+ *   search_web        → Google search
+ *   set_reminder      → schedules a timed reminder via setTimeout + TTS
+ *   define_word       → no action needed (TTS handles the spoken answer)
+ *   general_reply     → no action needed
  */
+
+import { spotifyAction, isSpotifyConnected } from '../services/spotifyService.js'
 
 /** Active timers store: supports multiple simultaneous reminders */
 const activeTimers = new Map()
@@ -19,8 +26,9 @@ let timerIdCounter = 0
  * Execute an action from the AI JSON response.
  * @param {Object} aiResponse
  * @param {function} onTimerFired - called with message string when a reminder fires
+ * @returns {Promise<string|undefined>} override reply if Spotify API returns one
  */
-export function executeAction(aiResponse, onTimerFired) {
+export async function executeAction(aiResponse, onTimerFired) {
   const { intent, action } = aiResponse
 
   switch (intent) {
@@ -28,6 +36,22 @@ export function executeAction(aiResponse, onTimerFired) {
       return handleOpenApp(action)
     case 'play_music':
       return handlePlayMusic(action)
+    // Real Spotify API control intents
+    case 'spotify_pause':
+    case 'pause_music':
+      return handleSpotifyControl('pause', null)
+    case 'spotify_skip':
+    case 'skip_track':
+    case 'next_track':
+      return handleSpotifyControl('skip', null)
+    case 'spotify_previous':
+    case 'previous_track':
+      return handleSpotifyControl('previous', null)
+    case 'spotify_current':
+    case 'what_playing':
+      return handleSpotifyControl('current', null)
+    case 'spotify_volume':
+      return handleSpotifyControl('volume', action?.query)
     case 'search_web':
       return handleWebSearch(action)
     case 'set_reminder':
@@ -38,6 +62,7 @@ export function executeAction(aiResponse, onTimerFired) {
       break
   }
 }
+
 
 // ─────────────────────────────────────────────
 // Open App
@@ -85,26 +110,47 @@ function handleOpenApp(action) {
 // ─────────────────────────────────────────────
 // Play Music / Video
 // ─────────────────────────────────────────────
-function handlePlayMusic(action) {
+async function handlePlayMusic(action) {
   const target = (action?.target || '').toLowerCase()
   const query  = action?.query
 
-  if (!query) {
-    // No song specified — just open the platform
-    if (target.includes('youtube')) {
-      window.open('https://www.youtube.com', '_blank', 'noopener')
-    } else {
-      window.open('https://open.spotify.com', '_blank', 'noopener')
-    }
-    return
-  }
-
   if (target.includes('youtube')) {
+    if (!query) {
+      window.open('https://www.youtube.com', '_blank', 'noopener')
+      return undefined
+    }
     // YouTube search — user can click to play
     window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank', 'noopener')
-  } else {
-    // Default to Spotify search
-    window.open(`https://open.spotify.com/search/${encodeURIComponent(query)}`, '_blank', 'noopener')
+    return undefined
+  }
+
+  // Native Spotify integration (Premium features)
+  try {
+    if (!isSpotifyConnected()) {
+      return "I cannot play music directly until you connect your Spotify account in the Settings panel."
+    }
+    if (!query) {
+      return await spotifyAction('resume', null)
+    }
+    return await spotifyAction('play', query)
+  } catch (err) {
+    console.error('Spotify Play error:', err)
+    return `Spotify error: ${err.message}`
+  }
+}
+
+// ─────────────────────────────────────────────
+// Direct Spotify Controls
+// ─────────────────────────────────────────────
+async function handleSpotifyControl(command, query) {
+  try {
+    if (!isSpotifyConnected()) {
+      return "Please connect Spotify in the Settings panel first."
+    }
+    return await spotifyAction(command, query)
+  } catch (err) {
+    console.error(`Spotify ${command} error:`, err)
+    return `Spotify error: ${err.message}`
   }
 }
 

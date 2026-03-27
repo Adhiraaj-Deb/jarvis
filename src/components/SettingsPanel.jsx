@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { connectSpotify, isSpotifyConnected } from '../services/spotifyService.js'
 
 const PORCUPINE_DOCS = 'https://console.picovoice.ai/'
 const OPENROUTER_MODELS = 'https://openrouter.ai/models?q=free'
@@ -23,6 +24,9 @@ export default function SettingsPanel({ isOpen, onClose, conversationHistory }) 
       return []
     }
   })
+
+  // Local state to re-render connection status after popup success
+  const [spotifyLinked, setSpotifyLinked] = useState(isSpotifyConnected())
 
   useEffect(() => {
     if (isOpen) {
@@ -79,7 +83,33 @@ export default function SettingsPanel({ isOpen, onClose, conversationHistory }) 
 
           {/* API Status */}
           <section className="settings-section">
-            <h3>API Status</h3>
+            <h3>API Status & Integrations</h3>
+            
+            <div className="api-status-row">
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span>Spotify Premium</span>
+                <span className={`api-dot ${spotifyLinked ? 'ok' : 'missing'}`}>
+                  {spotifyLinked ? '● Connected' : '○ Not configured'}
+                </span>
+              </div>
+              {!spotifyLinked && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      await connectSpotify()
+                      setSpotifyLinked(true)
+                    } catch (e) {
+                      alert(e.message)
+                    }
+                  }} 
+                  className="clear-btn" 
+                  style={{ backgroundColor: '#1DB954', color: '#000', fontWeight: 'bold' }}
+                >
+                  Connect
+                </button>
+              )}
+            </div>
+
             {apiStatus.map((api) => (
               <div key={api.name} className="api-status-row">
                 <span>{api.name}</span>
