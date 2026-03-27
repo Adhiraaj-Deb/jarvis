@@ -6,8 +6,10 @@
 
 const LLAMA_KEY = import.meta.env.VITE_OPENROUTER_KEY_LLAMA
 const QWEN_KEY  = import.meta.env.VITE_OPENROUTER_KEY_QWEN
+const FALLBACK_KEY = import.meta.env.VITE_OPENROUTER_KEY_GEMMA
 const LLAMA_MODEL = import.meta.env.VITE_LLAMA_MODEL_ID || 'meta-llama/llama-3.3-70b-instruct:free'
 const FAST_MODEL  = import.meta.env.VITE_QWEN_MODEL_ID  || 'zhipu/glm-4.5-air:free'
+const FALLBACK_MODEL = import.meta.env.VITE_GEMMA_MODEL_ID || 'google/gemma-3-12b-it:free'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
@@ -61,8 +63,21 @@ function stripFences(raw) {
  */
 export async function callAI(transcript, complexity = 'complex', conversationHistory = []) {
   const useComplex = complexity === 'complex'
-  const apiKey = useComplex ? LLAMA_KEY : QWEN_KEY
-  const model  = useComplex ? LLAMA_MODEL : FAST_MODEL
+  const useFallback = complexity === 'fallback'
+  
+  let apiKey = FAST_MODEL
+  let model = FAST_MODEL
+  
+  if (useComplex) {
+    apiKey = LLAMA_KEY
+    model = LLAMA_MODEL
+  } else if (useFallback) {
+    apiKey = FALLBACK_KEY
+    model = FALLBACK_MODEL
+  } else {
+    apiKey = QWEN_KEY
+    model = FAST_MODEL
+  }
 
   // Append a hard JSON reminder to every user message — works on all models
   const userMessage = `${transcript}\n\n[Respond with ONLY a valid JSON object matching the schema. No markdown, no extra text.]`
@@ -111,12 +126,15 @@ export async function callAI(transcript, complexity = 'complex', conversationHis
   }
 
   if (!response || !response.ok) {
-    // Primary model failed 3 times — fall back to fast model
+    // Cascade failures: Complex -> Simple -> Fallback -> Error
     if (useComplex) {
       console.warn('Complex model failed, falling back to fast model:', lastError?.message)
       return callAI(transcript, 'simple', conversationHistory)
+    } else if (!useFallback) {
+      console.warn('Fast model failed, falling back to 3rd layer safety model:', lastError?.message)
+      return callAI(transcript, 'fallback', conversationHistory)
     }
-    throw lastError || new Error('Network failure after 3 retries')
+    throw lastError || new Error('Network failure after all model fallbacks exhausted')
   }
 
   const data = await response.json()
